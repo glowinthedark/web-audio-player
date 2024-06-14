@@ -1,0 +1,417 @@
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>glowinthedark web player</title>
+  <style>
+    body {
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: linear-gradient(0deg, #77ad9d 27%, #daf9ea 75%);
+    }
+
+    h1 {
+      font-size: 12pt;
+      color: #6c757d;
+      max-width: 400px;
+      text-align: right;
+    }
+
+    h3 {
+      font-size: 10pt;
+      color: #6c757d;
+      font-weight: normal;
+      font-family: 'Avenir Next Condensed', 'DIN Condensed';
+    }
+
+    audio {
+      width: 300px;
+    }
+
+    #card {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: stretch;
+      /* border-radius: 20px; */
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+      min-width: 600px;
+      max-width: 600px;
+    }
+
+    #card #display {
+      /* border-radius: 20px 0 0 20px; */
+      background: rgba(255, 255, 255, 0.5);
+      background-origin: content-box;
+      backdrop-filter: blur(30px) hue-rotate(20deg);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: end;
+      padding: 1em;
+      background-repeat: no-repeat;
+      background-size: contain;
+      min-width: 400px;
+    }
+
+    #card #display #art {
+      height: 0;
+      margin: 0;
+      display: none;
+    }
+
+    #card #list {
+
+      background: transparent;
+      display: flex;
+      flex-direction: column;
+      height: 60vh;
+      overflow: auto;
+    }
+
+    #card #list .item {
+      padding: 0 1em;
+      background: white;
+      transition: all 0.3s ease;
+    }
+
+    #card #list .item.is-active {
+      background: rgba(255, 255, 255, 0.5);
+      backdrop-filter: blur(30px) hue-rotate(20deg);
+      transition: all 0.3s ease;
+    }
+
+    #card #list .item:hover {
+      cursor: pointer;
+    }
+
+    body {
+      font-family: "Segoe UI", "San Francisco", Calibri, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    #drop-area.highlight {
+      background: lightgreen;
+    }
+
+    a {
+      font-size: large;
+      color: #6c757d;
+      padding: .5em;
+      text-decoration: none;
+      text-transform: uppercase;
+    }
+
+    a:hover {
+      background-color: #9ac074;
+    }
+
+    a:active {
+      background-color: black;
+    }
+
+    a:visited {
+      background-color: #ccc;
+    }
+
+    .ctrls {
+      margin: 0;
+      padding: 0;
+    }
+
+    #song_title {
+      font-size: 11pt;
+      color: #a9a9a9;
+      text-align: right;
+    }
+
+    #song_url {
+      text-align: right;
+      word-break: break-all;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      overflow: visible;
+    }
+
+    @media (max-width: 600px) {
+
+      #card {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: stretch;
+
+        box-shadow: 0 0 0;
+        min-width: auto;
+        max-width: auto;
+      }
+    }
+  </style>
+</head>
+
+<body id="drop-area">
+  <div id='card'>
+    <div id='display'>
+      <h1 id='title'></h1>
+      <div id='song_title'></div>
+      <a href="" id='song_url'>🔗</a>
+      <div id='header'>
+      </div>
+      <div id='image'>
+        <img src='' alt='' id='art' />
+      </div>
+      <audio controls src='' id='audio'>
+      </audio>
+      <span class="ctrls">
+        <a onclick="saveM3U(window.urls);return false;" href="#">💾</a>
+        <a onclick="reset(this);return false;" href="#">🗑️</a>
+        <a name="prv" onclick="jump(this);return false;" href="#">⏪️</a>
+        <a name="nxt" onclick="jump(this);return false;" href="#">⏩️</a>
+      </span>
+    </div>
+    <div id='list'>
+    </div>
+  </div>
+  <script>
+
+    const REGEX_TYPE_AUDIO = /\.(mp3|m4a|aac|flac|ape|wav|ogg|oga|webm)$/i;
+    const IMG_COVER_DEFAULT = 'http://localhost/bio/projects/python/stuffilococcus/audioplay/cover.svg';
+
+    var items = localStorage.getItem('items');
+    window.urls = items && JSON.parse(items) || [];
+    if (window.urls && window.urls.length) {
+      loadPlaylist();
+    }
+
+    var dropArea = document.getElementById('drop-area');
+
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      dropArea.addEventListener(eventName, preventDefaults, false)
+    })
+
+    function preventDefaults(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    function reset() {
+      window.urls = [];
+      localStorage.setItem('items', "[]");
+      loadPlaylist();
+    }
+
+    function jump(btn) {
+      var dat = document.querySelector('.is-active').dataset;
+      if (dat) {
+        const idx = parseInt(dat.index);
+        var newIdx;
+        if (btn && btn.name == 'prv') {
+          newIdx = parseInt(idx) - 1;
+        } else {
+          newIdx = parseInt(idx) + 1;
+        }
+        displayTrack(newIdx);
+      }
+    }
+
+    function saveM3U(playlist) {
+      let m3uContent = '#EXTM3U\n'; // Start of playlist file
+
+      playlist.forEach((item, index) => {
+        m3uContent += `#EXTINF:-1,${item.artist} - ${item.track}\n`;
+        m3uContent += `${item.url}\n`;
+      });
+
+      // Create Blob from string
+      const blob = new Blob([m3uContent], { type: 'audio/x-mpegurl' });
+
+      // Create link element
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'playlist.m3u';
+      link.click();
+    }
+
+    window.audio = document.getElementById('audio');
+
+    window.audio.addEventListener('ended', () => {
+      jump();
+    });
+
+    function itemizeUrl(href) {
+      let parsedUrl = new URL(href);
+      let pathSegments = parsedUrl.pathname.split('/');
+      let name = decodeURIComponent(pathSegments.pop()).replace(REGEX_TYPE_AUDIO, '').replace('-', '');
+      let artist = pathSegments.length && decodeURIComponent(pathSegments.pop()) || name;
+      let cover = href.replace(/[^/]*$/, '');
+
+      return {
+        artist: artist,
+        track: name,
+        url: href,
+        art: cover
+      };
+    }
+
+    function extractLinks(raw) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(raw, 'text/html');
+
+      return Array.from(doc.querySelectorAll('a'))
+        .filter((link) => REGEX_TYPE_AUDIO.test(link.href))
+        .map((link) => (itemizeUrl(link.href)));
+    }
+
+    ;['dragenter', 'dragover'].forEach(eventName => {
+      dropArea.addEventListener(eventName, highlight, false)
+    })
+
+      ;['dragleave', 'drop'].forEach(eventName => {
+        dropArea.addEventListener(eventName, unhighlight, false)
+      })
+
+    function highlight(e) {
+      dropArea.classList.add('highlight')
+    }
+
+    function unhighlight(e) {
+      dropArea.classList.remove('highlight')
+    }
+
+    dropArea.addEventListener('drop', handleDrop, false);
+
+    function handleDrop(event) {
+      event.preventDefault(); // Prevent default behavior (Prevent file from being opened)
+      var raw = event.dataTransfer.getData('text/html');
+      console.log(raw);
+      var url = event.dataTransfer.getData('URL');
+
+      if (url) { // draging a single URL
+        if (REGEX_TYPE_AUDIO.test(url)) {
+          window.urls.push(itemizeUrl(url));
+        } else {
+          alert(`${url} does not seem to be an audio file`)
+        }
+      } else if (raw) { // dragging a whole selection, not a single URL
+        var links = extractLinks(raw);
+
+        var currentUrls = [...new Set(window.urls.map((item) => item.url))];
+        // merge new with old avoid URL dupes
+        for (const link of links) {
+          if (currentUrls.indexOf(link.url) === -1) {
+            window.urls.push(link);
+            currentUrls.push(link.url);
+          }
+        }
+      } else if (event.dataTransfer.items && event.dataTransfer.items.length) {
+        var itemz = event.dataTransfer.items;
+        for (let i = 0; i < itemz.length; i++) {
+          var file = itemz[i].getAsFile();
+          var objUrl = URL.createObjectURL(file);
+          console.log(file.name);
+          window.urls.push({
+            artist: '📁',
+            track: file.name,
+            url: objUrl,
+            art: ''
+          });
+        }
+      } else if (event.dataTransfer.files && event.dataTransfer.files.length) {
+        var filez = event.dataTransfer.files;
+        for (let i = 0; i < filez.length; i++) {
+          console.log(filez[i].name);
+        }
+      }
+
+      if (window.urls && window.urls.length) {
+        localStorage.setItem('items', JSON.stringify(window.urls));
+        loadPlaylist();
+      }
+      event.dataTransfer.clearData();
+    }
+
+    function displayTrack(x) {
+      var active = document.querySelector('.is-active');
+      if (active) {
+        active.classList.remove('is-active');
+      }
+      var el = document.getElementById('list').children[x];
+      el.classList.add('is-active');
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      var s = window.urls[x],
+        number = parseInt(x) + 1;
+      var title = document.getElementById('title');
+      title.innerText = number + ": " + s.artist;
+      title.setAttribute('title', s.url)
+      document.getElementById('song_title').innerText = s.track;
+      document.getElementById('song_url').href = s.url;
+      var art = document.getElementById('art');
+
+      if (!s.art) {
+        art.src = IMG_COVER_DEFAULT;
+      } else {
+        var art_srcs = ['cover.jpg', 'Cover.jpg', 'folder.jpg', 'Folder.jpg', 'album.jpg', 'front.jpg', 'Front.jpg', 'cover.png', 'folder.png', 'album.png', 'front.png', IMG_COVER_DEFAULT];
+
+        art.src = s.art + art_srcs.shift();
+
+        art.onerror = () => {
+          if (art_srcs.length) {
+
+            var path = art_srcs.shift();
+            art.src = path.startsWith('http') ? path : s.art + path;
+            audio.parentElement.style.backgroundImage = `url(${art.src})`
+          }
+        };
+      }
+      const audi = document.getElementById('audio');
+      audi.src = s.url;
+      audi.play();
+    }
+
+    function loadPlaylist() {
+
+      document.getElementById('list').innerHTML = '';
+
+      for (x = 0; x < window.urls.length; x++) {
+        var s = window.urls[x];
+        var number = parseInt(x) + 1;
+        var artist = document.createTextNode(number + ": " + s.artist);
+        var track_name = document.createTextNode(s.track);
+
+        var listItem = document.createElement('div');
+        var artist_text = document.createElement('h3');
+        var track_text = document.createElement('p');
+
+        artist_text.appendChild(artist);
+        track_text.appendChild(track_name);
+
+        listItem.appendChild(artist_text);
+        listItem.appendChild(track_text);
+
+        listItem.classList.add('item');
+        if (window.audio && s.url == audio.src) {
+          listItem.classList.add('is-active');
+        }
+        listItem.dataset.index = x;
+
+        document.getElementById('list').appendChild(listItem);
+      }
+
+      var listItems = document.querySelectorAll('.item');
+      listItems.forEach(el => {
+        el.onclick = () => {
+          displayTrack(el.dataset.index);
+        };
+      });
+    }
+  </script>
+</body>
+
+</html>
